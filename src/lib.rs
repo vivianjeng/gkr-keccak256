@@ -19,7 +19,7 @@ use rand::{
     RngCore, SeedableRng,
 };
 use serialization::SerializationEvalClaims;
-use std::iter;
+use std::{error::Error, iter, panic::AssertUnwindSafe};
 
 fn rand_vec<F: Field>(n: usize, mut rng: impl RngCore) -> Vec<F> {
     iter::repeat_with(|| F::random(&mut rng)).take(n).collect()
@@ -29,7 +29,9 @@ fn seeded_std_rng() -> StdRng {
     StdRng::seed_from_u64(OsRng.next_u64())
 }
 
-pub fn prove_keccak(input: &[u8]) -> (String, Vec<u8>) {
+type GenerateProofResult = (String, Vec<u8>);
+
+pub fn prove(input: Vec<u8>) -> Result<GenerateProofResult, Box<dyn Error>> {
     let num_reps = 1;
     let num_bits = 256;
     let keccak = Keccak::new(num_bits, num_reps);
@@ -51,10 +53,10 @@ pub fn prove_keccak(input: &[u8]) -> (String, Vec<u8>) {
 
     let serialized_output_claims =
         serde_json::to_string(&SerializationEvalClaims(output_claims)).unwrap();
-    (serialized_output_claims, proof)
+    Ok((serialized_output_claims, proof))
 }
 
-pub fn verify_keccak(input: &[u8], output_claims: &str, proof: &[u8]) {
+pub fn verify(input: Vec<u8>, output_claims: &str, proof: Vec<u8>) -> Result<bool, Box<dyn Error>> {
     let num_reps = 1;
     let num_bits = 256;
     let keccak = Keccak::new(num_bits, num_reps);
@@ -73,16 +75,23 @@ pub fn verify_keccak(input: &[u8], output_claims: &str, proof: &[u8]) {
         69, 72, 99, 100,
     ];
 
-    izip_eq!(circuit_inputs, input_claims).for_each(|(input, claims)| {
-        claims
-            .iter()
-            .for_each(|claim| assert_eq!(values[input].evaluate(claim.point()), claim.value()))
-    });
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        izip_eq!(circuit_inputs, input_claims).for_each(|(input, claims)| {
+            claims
+                .iter()
+                .for_each(|claim| assert_eq!(values[input].evaluate(claim.point()), claim.value()))
+        });
+    }));
+
+    match result {
+        Ok(_) => Ok(true),
+        Err(_) => Ok(false),
+    }
 }
 
 #[cfg(test)]
 pub mod test {
-    use crate::{prove_keccak, verify_keccak};
+    use crate::{prove, verify};
 
     #[test]
     fn test_prove_and_verify_keccak() {
@@ -90,7 +99,8 @@ pub mod test {
             116, 101, 115, 116, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0,
         ];
-        let (output_claims, proof) = prove_keccak(&input);
-        verify_keccak(&input, &output_claims, &proof);
+        let (output_claims, proof) = prove(input.clone()).unwrap();
+        let result = verify(input, &output_claims, proof).unwrap();
+        assert_eq!(result, true);
     }
 }
