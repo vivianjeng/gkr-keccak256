@@ -1,3 +1,6 @@
+mod keccak;
+mod serialization;
+
 use crate::keccak::Keccak;
 use ff_ext::ff::Field;
 use gkr::{
@@ -9,14 +12,13 @@ use gkr::{
     verify_gkr,
 };
 use goldilocks::{Goldilocks, GoldilocksExt2};
+use halo2_curves::bn256;
 use keccak::dev::keccak_circuit;
 use rand::{
     rngs::{OsRng, StdRng},
     RngCore, SeedableRng,
 };
 use std::iter;
-
-mod keccak;
 
 fn rand_vec<F: Field>(n: usize, mut rng: impl RngCore) -> Vec<F> {
     iter::repeat_with(|| F::random(&mut rng)).take(n).collect()
@@ -26,11 +28,11 @@ fn seeded_std_rng() -> StdRng {
     StdRng::seed_from_u64(OsRng.next_u64())
 }
 
-pub fn prove_keccak(input: &[u8]) -> (Vec<EvalClaim<GoldilocksExt2>>, Vec<u8>) {
+pub fn prove_keccak(input: &[u8]) -> (Vec<EvalClaim<bn256::Fr>>, Vec<u8>) {
     let num_reps = 1;
     let num_bits = 256;
     let keccak = Keccak::new(num_bits, num_reps);
-    let (circuit, values) = keccak_circuit::<Goldilocks, GoldilocksExt2>(keccak, &input);
+    let (circuit, values) = keccak_circuit::<bn256::Fr, bn256::Fr>(keccak, &input);
     let mut rng = seeded_std_rng();
 
     let output_claims = {
@@ -48,11 +50,11 @@ pub fn prove_keccak(input: &[u8]) -> (Vec<EvalClaim<GoldilocksExt2>>, Vec<u8>) {
     (output_claims, proof)
 }
 
-pub fn verify_keccak(input: &[u8], output_claims: Vec<EvalClaim<GoldilocksExt2>>, proof: &[u8]) {
+pub fn verify_keccak(input: &[u8], output_claims: Vec<EvalClaim<bn256::Fr>>, proof: &[u8]) {
     let num_reps = 1;
     let num_bits = 256;
     let keccak = Keccak::new(num_bits, num_reps);
-    let (circuit, values) = keccak_circuit::<Goldilocks, GoldilocksExt2>(keccak, &input);
+    let (circuit, values) = keccak_circuit::<bn256::Fr, bn256::Fr>(keccak, &input);
     let input_claims = {
         let mut transcript = StdRngTranscript::from_proof(&proof);
         verify_gkr(&circuit, &output_claims, &mut transcript).unwrap()
@@ -73,7 +75,7 @@ pub fn verify_keccak(input: &[u8], output_claims: Vec<EvalClaim<GoldilocksExt2>>
 
 #[cfg(test)]
 pub mod test {
-    use crate::{prove_keccak, verify_keccak};
+    use crate::{prove_keccak, serialization::SerializationEvalClaims, verify_keccak};
 
     #[test]
     fn test_prove_and_verify_keccak() {
@@ -82,6 +84,11 @@ pub mod test {
             0, 0, 0, 0, 0, 0,
         ];
         let (output_claims, proof) = prove_keccak(&input);
-        verify_keccak(&input, output_claims, &proof);
+        let serialized_output_claims =
+            serde_json::to_string(&SerializationEvalClaims(output_claims)).unwrap();
+        let deserialized_eval_claims: SerializationEvalClaims =
+            serde_json::from_str(&serialized_output_claims).unwrap();
+
+        verify_keccak(&input, deserialized_eval_claims.0, &proof);
     }
 }
