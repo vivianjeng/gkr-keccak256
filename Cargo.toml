@@ -1,0 +1,25 @@
+[package]
+name = "gkr-keccak256"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = ["dev"]
+
+dev = []
+
+[dependencies]
+gkr = { git = "https://github.com/han0110/gkr" }
+ff-ext = { git = "https://github.com/han0110/gkr" }
+goldilocks = { git = "https://github.com/han0110/goldilocks", branch = "feature/qe_op_b" }
+rayon = "1.8.0"
+rand_core = "0.6.4"
+rand = "0.8.5"
+itertools = "0.11.0"
+tiny-keccak = { version = "2.0.2", features = ["keccak"] }
+
+
+[dev-dependencies]
+gkr = { git = "https://github.com/han0110/gkr", features = ["dev"] }
